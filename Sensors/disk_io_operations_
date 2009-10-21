@@ -1,0 +1,107 @@
+#!/usr/bin/perl
+#
+# Parameters supported:
+#
+#       config
+#       autoconf
+#
+# You will need to symlink the disk_io_operations_ script for each
+# SCSI device attached to the system
+#
+#  Example: ln -s /usr/share/munin/plugins/disk_io_operations_ /etc/munin/plugins/disk_io_operations_sda
+#
+# Revision 1.1  2008/10/28
+# Created by Justin Shepherd <galstrom21@gmail.com>
+#
+#
+# Configurable Variables
+#
+#
+# Magic markers:
+#%# family=auto
+#%# capabilities=autoconf
+
+use strict;
+
+# Define global variables
+my ($arg, $SCSI_DEV, %data);
+
+##### Find my SAN Device
+$0 =~ /disk_io_operations_(\w+)$/;
+$SCSI_DEV= $1;
+
+# Pull in any arguments
+my $arg = shift();
+
+# Check to see how the script was called
+if ($arg eq 'autoconf') {
+        if (test_service()) { print "yes\n"; }
+        else { print "no\n"; }
+        exit();
+} else {
+        poll_devices(\%data);
+        if ($arg eq 'config') {
+                print_graph_information(\%data);
+                exit();
+        } else {
+                foreach my $i (sort keys %data) {
+                	print "$i.value $data{$i}\n";
+                } # end foreach
+        } # end else
+} # end else
+
+
+
+################################################################################
+##########                    SUB FUNCTIONS                           ##########
+################################################################################
+
+sub poll_devices {
+        my ($out);
+        $out = shift;
+
+        #### Find the DISK STATS for the SAN devices #####
+        open(STAT,"</sys/block/$SCSI_DEV/stat") or die "Could not open /sys/block/$SCSI_DEV/stat for reading: $!\n";
+        my $tmp = <STAT>;
+        chomp($tmp);
+        $tmp =~ s/^\s+//;
+	close STAT;
+        my ($reads,$reads_merged,$sector_reads,$read_seconds,$writes,$writes_merged,$sector_writes,$write_seconds,$num_of_ios,$io_seconds,$w_io_seconds) = split /\s+/,$tmp,11;
+	$$out{"read"} = $reads;
+        $$out{"write"} = $writes;
+} # end sub
+
+
+sub print_graph_information {
+my ($in,$order,$out);
+$in = shift;
+
+print "graph_title IO Operations for /dev/$SCSI_DEV\n";
+
+print <<EOM;
+graph_args --base 1000 -l 0
+graph_scale yes
+graph_vlabel IO Operations / \${graph_period}
+graph_category system
+EOM
+
+foreach my $j (sort keys %data) {
+	print "$j.label $j\n" .
+	      "$j.draw LINE2\n" .
+	      "$j.type DERIVE\n" .
+	      "$j.min 0\n";
+}
+
+} # end print_graph_information
+
+
+sub test_service {
+    my $return = 1;
+    if (-e "/sys/block/$SCSI_DEV/stat") {
+         print "yes\n";
+         $return = 0;
+    } else { print "no (/sys/block/$SCSI_DEV/stat does not exist)\n"; }
+    exit $return;
+}
+
+################################################################################
