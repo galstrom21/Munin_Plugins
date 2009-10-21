@@ -1,0 +1,154 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2008 Rackspace US, Inc. <http://www.rackspace.com>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2 dated June,
+# 1991.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see http://www.gnu.org/licenses/gpl.txt
+#
+#
+# To enable, link mysql_innodb_file_io to this file. E.g.
+#
+#    ln -s /usr/share/node/node/plugins/mysql_innodb_file_io /etc/munin/plugins/mysql_innodb_file_io
+#
+# Revision 1.0  2007/08/03
+# Created by Justin Shepherd <jshepher@rackspace.com>
+#
+# Parameters:
+#
+#   config
+#   autoconf
+#
+# Configuration variables
+#
+#   mysqlopts     - Options to pass to mysql
+#   mysqladmin    - Override location of mysqladmin
+#
+#%# family=auto
+#%# capabilities=autoconf
+
+use strict;
+
+# Define the mysqladmin paths, and commands
+my $MYSQLADMIN = $ENV{mysqladmin} || "mysqladmin";
+my $TEST_COMMAND    = "$MYSQLADMIN $ENV{mysqlopts} extended-status";
+my $MYSQL_VARIABLES = "$MYSQLADMIN $ENV{mysqlopts} extended-status variables";
+# my $warning = $ENV{warning} || "80";
+# my $critical = $ENV{critical} || "90";
+
+# Pull in any arguments
+my $arg = shift();
+
+# Check to see how the script was called
+if ($arg eq 'config') {
+    print_graph_information();
+    exit();
+} elsif ($arg eq 'autoconf') {
+    if (test_service()) { print "yes\n"; }
+    else { print "no\n"; }
+    exit;
+} else {
+        # Gather the values from mysqladmin
+        my $log_writes = poll_variables($MYSQL_VARIABLES,"Innodb_log_writes");
+        my $data_writes = poll_variables($MYSQL_VARIABLES,"Innodb_data_writes");
+        my $data_reads = poll_variables($MYSQL_VARIABLES,"Innodb_data_reads");
+	my $data_fsyncs = poll_variables($MYSQL_VARIABLES,"Innodb_data_fsyncs");
+
+        # Return the values to Munin
+        print "log_writes.value $log_writes\n";
+        print "data_writes.value $data_writes\n";
+        print "data_reads.value $data_reads\n";
+        print "data_fsyncs.value $data_fsyncs\n";
+}
+
+
+sub poll_variables {
+        my $command = shift;
+        my $expression = shift;
+        my $ret = 0;
+        open(SERVICE, "$command |")
+                or die("Coult not execute '$command': $!");
+        while (<SERVICE>) {
+            my ($field, $value) = (m/(\w+).*?(\d+(?:\.\d+)?)/);
+            next unless ($field);
+            if ($field eq $expression ) {
+                $ret = "$value";
+            }
+        }
+        close(SERVICE);
+        return $ret;
+}
+
+
+sub print_graph_information {
+print <<EOM;
+graph_title InnoDB File I/O
+graph_args --base 1000 -l 0
+graph_vlabel File I/O Operations per \${graph_period}
+graph_category mysql
+graph_order log_writes data_writes data_reads data_fsyncs
+log_writes.label Log Writes
+log_writes.type DERIVE
+log_writes.draw LINE2
+log_writes.info The number of physical writes to the log file.
+data_writes.label Data Writes
+data_writes.type DERIVE
+data_writes.draw LINE2
+data_writes.info The total number of data writes.
+data_reads.label Data Reads
+data_reads.draw LINE2
+data_reads.type DERIVE
+data_reads.info The total number of data reads.
+data_fsyncs.label Data Fsyncs
+data_fsyncs.draw LINE2
+data_fsyncs.type DERIVE
+data_fsyncs.info The number of fsync() operations.
+EOM
+}
+
+sub test_service {
+    my $return = 1;
+    system ("$MYSQLADMIN --version >/dev/null 2>/dev/null");
+    if ($? == 0)
+    {
+        system ("$TEST_COMMAND >/dev/null 2>/dev/null");
+        if ($? == 0)
+        {
+            if (innodb_enabled()) {
+		print "yes\n";
+            	$return = 0;
+	    } else {
+		print "no (InnoDB is not enabled)\n";
+	    }
+        }
+        else
+        {
+            print "no (could not connect to mysql)\n";
+        }
+    }
+    else
+    {
+        print "no (mysqladmin not found)\n";
+    }
+    exit $return;
+}
+
+sub innodb_enabled {
+        my $ret = 0;
+        my $out = `mysql $ENV{mysqlopts} -e "show variables like 'have_innodb';" | tail -1`;
+        chomp($out);
+        my ($tmp, $binlog) = split /\s/,$out,2;
+        if ($binlog eq "YES") {
+                $ret = 1;
+        }
+        return $ret;
+}

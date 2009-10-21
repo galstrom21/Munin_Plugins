@@ -1,0 +1,150 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2008 Rackspace US, Inc. <http://www.rackspace.com>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2 dated June,
+# 1991.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see http://www.gnu.org/licenses/gpl.txt
+#
+#
+# This plugin is based off of the Connection Usaged
+# section of the MySQL Connection Health Page
+#
+# http://dev.mysql.com/doc/refman/5.0/en/binary-log.html
+#
+# To enable, link mysql_binlog_cache to this file. E.g.
+#
+#    ln -s /usr/share/node/node/plugins/mysql_binlog_cache /etc/munin/plugins/mysql_binlog_cache
+#
+# Revision 1.0  2008/06/06
+# Created by Justin Shepherd <jshepher@rackspace.com>
+#
+# Parameters:
+#
+#   config
+#   autoconf
+#
+# Configuration variables
+#
+#   mysqlopts     - Options to pass to mysql
+#   mysqladmin    - Override location of mysqladmin
+#
+#%# family=auto
+#%# capabilities=autoconf
+
+use strict;
+
+# Define the mysqladmin paths, and commands
+my $MYSQLADMIN = $ENV{mysqladmin} || "mysqladmin";
+my $TEST_COMMAND    = "$MYSQLADMIN $ENV{mysqlopts} extended-status";
+my $MYSQL_STATUS = "$MYSQLADMIN $ENV{mysqlopts} extended-status";
+my $MYSQL_VARIABLES = "$MYSQLADMIN $ENV{mysqlopts} extended variables";
+
+# Pull in any arguments
+my $arg = shift();
+
+# Check to see how the script was called
+if ($arg eq 'config') {
+    print_graph_information();
+    exit();
+} elsif ($arg eq 'autoconf') {
+    if (test_service()) { print "yes\n"; }
+    else { print "no\n"; }
+    exit;
+} else {
+        # Define the values that are returned to munin
+        my ($binlog_cache_use, $binlog_cache_disk_use) = (0,0);
+
+        # Gather the values from mysqladmin
+        $binlog_cache_use = poll_variables($MYSQL_STATUS,"Binlog_cache_use");
+        $binlog_cache_disk_use = poll_variables($MYSQL_STATUS,"Binlog_cache_disk_use");
+
+        # Return the values to Munin
+        print "cache_use.value $binlog_cache_use\n";
+        print "cache_disk_use.value $binlog_cache_disk_use\n";
+}
+
+
+sub print_graph_information {
+print <<EOM;
+graph_title MySQL Binlog Cache Usage
+graph_args --base 1000 -l 0
+graph_vlabel Transactions per \${graph_period}
+graph_info This graph shows the number of Transactions per \${graph_period} which use the binlog_cache. If the "Used Disk" value gets high you probally need to increase the binlog_cache_size variable.
+graph_category mysql
+graph_order cache_use disk_cache_use
+cache_use.label Used Cache
+cache_use.draw LINE2
+cache_use.type DERIVE
+cache_use.info The number of transactions that used the binlog_cache (and possibly a temporary file) for storing statements.
+disk_cache_use.label Used Disk
+disk_cache_use.draw LINE2
+disk_cache_use.DERIVE
+disk_cache_use.info The number of transactions that had to use a temporary file.
+EOM
+}
+
+
+sub test_service {
+    my $return = 1;
+    system ("$MYSQLADMIN --version >/dev/null 2>/dev/null");
+    if ($? == 0)
+    {
+        system ("$TEST_COMMAND >/dev/null 2>/dev/null");
+        if ($? == 0)
+        {
+            if (binlog_enabled()) {
+                print "yes\n";
+                $return = 0;
+            } else {
+                print "no (binary logging not enabled)\n";
+            }
+        }
+        else
+        {
+            print "no (could not connect to mysql)\n";
+        }
+    }
+    else
+    {
+        print "no (mysqladmin not found)\n";
+    }
+    exit $return;
+}
+
+sub poll_variables {
+        my $command = shift;
+        my $expression = shift;
+        my $ret = 0;
+        open(SERVICE, "$command |")
+                or die("Coult not execute '$command': $!");
+        while (<SERVICE>) {
+            my ($field, $value) = (m/(\w+).*?(\d+(?:\.\d+)?)/);
+            next unless ($field);
+            if ($field eq $expression ) {
+                $ret = "$value";
+            }
+        }
+        close(SERVICE);
+        return $ret;
+}
+
+sub binlog_enabled {
+        my $ret = 0;
+        my $out = `mysql $ENV{mysqlopts} -e "show variables like 'log_bin';" | tail -1`;
+        chomp($out);
+        my ($tmp, $binlog) = split /\s/,$out,2;
+        if ($binlog eq "ON") {
+                $ret = 1;
+        }
+        return $ret;
+}

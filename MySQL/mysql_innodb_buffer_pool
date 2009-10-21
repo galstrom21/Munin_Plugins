@@ -1,0 +1,163 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2008 Rackspace US, Inc. <http://www.rackspace.com>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2 dated June,
+# 1991.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see http://www.gnu.org/licenses/gpl.txt
+#
+#
+# To enable, link mysql_innodb_buffer_pool to this file. E.g.
+#
+#    ln -s /usr/share/node/node/plugins/mysql_innodb_buffer_pool /etc/munin/plugins/mysql_innodb_buffer_pool
+#
+# Revision 1.0  2007/08/03
+# Created by Justin Shepherd <jshepher@rackspace.com>
+#
+# Parameters:
+#
+#   config
+#   autoconf
+#
+# Configuration variables
+#
+#   mysqlopts     - Options to pass to mysql
+#   mysqladmin    - Override location of mysqladmin
+#
+#%# family=auto
+#%# capabilities=autoconf
+
+use strict;
+
+# Define the mysqladmin paths, and commands
+my $MYSQLADMIN = $ENV{mysqladmin} || "mysqladmin";
+my $TEST_COMMAND    = "$MYSQLADMIN $ENV{mysqlopts} extended-status";
+my $MYSQL_VARIABLES = "$MYSQLADMIN $ENV{mysqlopts} extended-status variables";
+# my $warning = $ENV{warning} || "80";
+# my $critical = $ENV{critical} || "90";
+
+# Pull in any arguments
+my $arg = shift();
+
+# Check to see how the script was called
+if ($arg eq 'config') {
+    print_graph_information();
+    exit();
+} elsif ($arg eq 'autoconf') {
+    if (test_service()) { print "yes\n"; }
+    else { print "no\n"; }
+    exit;
+} else {
+        # Gather the values from mysqladmin
+        my $pages_data = poll_variables($MYSQL_VARIABLES,"Innodb_buffer_pool_pages_data");
+        my $pages_free = poll_variables($MYSQL_VARIABLES,"Innodb_buffer_pool_pages_free");
+        my $pages_misc = poll_variables($MYSQL_VARIABLES,"Innodb_buffer_pool_pages_misc");
+        my $pages_dirty = poll_variables($MYSQL_VARIABLES,"Innodb_buffer_pool_pages_dirty");
+	my $pages_total = poll_variables($MYSQL_VARIABLES,"Innodb_buffer_pool_pages_total");
+
+	my $pages_clean = $pages_data - $pages_dirty;
+
+        # First check that the following is true
+        my $sum = $pages_clean + $pages_misc + $pages_dirty + $pages_free;
+        if ($sum ne $pages_total) {
+                print "The force is not strong with you grasshopper!\n" .
+                      "$pages_total != $pages_data + $pages_misc + $pages_free";
+                exit(1);
+        }
+
+        # Return the values to Munin
+        print "clean_pages.value $pages_clean\n";
+        print "dirty_pages.value $pages_dirty\n";
+        print "misc_pages.value $pages_misc\n";
+        print "free_pages.value $pages_free\n";
+}
+
+
+sub poll_variables {
+        my $command = shift;
+        my $expression = shift;
+        my $ret = 0;
+        open(SERVICE, "$command |")
+                or die("Coult not execute '$command': $!");
+        while (<SERVICE>) {
+            my ($field, $value) = (m/(\w+).*?(\d+(?:\.\d+)?)/);
+            next unless ($field);
+            if ($field eq $expression ) {
+                $ret = "$value";
+            }
+        }
+        close(SERVICE);
+        return $ret;
+}
+
+
+sub print_graph_information {
+print <<EOM;
+graph_title InnoDB Buffer Pool Pages
+graph_args --base 1000 -l 0
+graph_vlabel Pages
+graph_category mysql
+graph_order clean_pages dirty_pages misc_pages free_pages
+graph_total Total
+clean_pages.label Clean Pages
+clean_pages.draw AREA
+clean_pages.info The number of pages containing clean data.
+dirty_pages.label Dirty Pages
+dirty_pages.draw STACK
+dirty_pages.info The number of pages containing dirty data.
+misc_pages.label Misc Pages
+misc_pages.draw STACK
+misc_pages.info The number of pages that are busy because they have been allocated for administrative overhead.
+free_pages.label Free Pages
+free_pages.draw STACK
+free_pages.info The number of free pages.
+EOM
+}
+
+sub test_service {
+    my $return = 1;
+    system ("$MYSQLADMIN --version >/dev/null 2>/dev/null");
+    if ($? == 0)
+    {
+        system ("$TEST_COMMAND >/dev/null 2>/dev/null");
+        if ($? == 0)
+        {
+            if (innodb_enabled()) {
+	    	print "yes\n";
+            	$return = 0;
+	    } else {
+		print "no (InnoDB is not enabled)\n";
+	    }
+        }
+        else
+        {
+            print "no (could not connect to mysql)\n";
+        }
+    }
+    else
+    {
+        print "no (mysqladmin not found)\n";
+    }
+    exit $return;
+}
+
+sub innodb_enabled {
+        my $ret = 0;
+        my $out = `mysql $ENV{mysqlopts} -e "show variables like 'have_innodb';" | tail -1`;
+        chomp($out);
+        my ($tmp, $binlog) = split /\s/,$out,2;
+        if ($binlog eq "YES") {
+                $ret = 1;
+        }
+        return $ret;
+}
+
