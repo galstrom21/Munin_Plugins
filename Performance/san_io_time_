@@ -1,0 +1,138 @@
+#!/usr/bin/perl
+#
+# Parameters supported:
+#
+#       config
+#       autoconf
+#
+# You will need to symlink the san_io_time_ script for each
+# pseudo device (SAN LUN) attached to the system
+#
+#  Example: ln -s /usr/share/munin/plugins/san_io_time_ /etc/munin/plugins/san_io_time_emcpowera
+#
+# Revision 1.0  2008/04/24
+# Created by Justin Shepherd <galstrom21@gmail.com>
+#
+#
+# Configurable Variables
+#
+#       powermt      - Override default location of the powermt utility
+#
+#
+# Magic markers:
+#%# family=auto
+#%# capabilities=autoconf
+
+use strict;
+
+# Define global variables
+my ($arg, $powermt, $SAN_DEV, %data);
+
+# Check for environment variables
+$powermt = $ENV{powermt} || "/sbin/powermt";
+chomp($powermt);
+
+##### Find my SAN Device
+$0 =~ /san_io_time_(\w+)$/;
+$SAN_DEV= $1;
+
+# Pull in any arguments
+my $arg = shift();
+
+# Check to see how the script was called
+if ($arg eq 'autoconf') {
+        if (test_service()) { print "yes\n"; }
+        else { print "no\n"; }
+        exit();
+} else {
+        poll_devices(\%data);
+        if ($arg eq 'config') {
+                print_graph_information(\%data);
+                exit();
+        } else {
+                foreach my $i (sort keys %{$data{$SAN_DEV}}) {
+                        if ($i =~ m/total_\w+/i) {
+                                print "$i.value $data{$SAN_DEV}{$i}\n";
+                        } # end if
+                } # end foreach
+        } # end else
+} # end else
+
+
+
+################################################################################
+##########                    SUB FUNCTIONS                           ##########
+################################################################################
+
+sub poll_devices {
+        my ($out, @scsi_devices, $fs, $mount, $tmp);
+        $out = shift;
+
+        @scsi_devices = `$powermt display dev=$SAN_DEV | grep -e "qla" 2>&1 | awk '{print \$3}'`;
+        foreach my $i (0 .. $#scsi_devices) {
+                chomp($scsi_devices[$i]);
+                $$out{$SAN_DEV}{"devices"}{"$scsi_devices[$i]"} = {};
+
+                ##### Find the DISK STATS for the SAN devices #####
+                open(STAT,"</sys/block/$scsi_devices[$i]/stat") or die "Could not open /sys/block/$scsi_devices[$i]/stat for reading: $!\n";
+                my $tmp = <STAT>;
+                chomp($tmp);
+                close STAT;
+                my ($reads,$reads_merged,$sector_reads,$read_seconds,$writes,$writes_merged,$sector_writes,$write_seconds,$num_of_ios,$io_seconds,$w_io_seconds) = split /\s+/,$tmp,11;
+                $$out{$SAN_DEV}{"devices"}{$scsi_devices[$i]}{"read"} = $read_seconds;
+                $$out{$SAN_DEV}{"devices"}{$scsi_devices[$i]}{"write"} = $write_seconds;
+        } # end foreach
+
+        foreach my $i (sort keys %data) {
+                $$out{$i}{total_read} = 0;
+                $$out{$i}{total_write} = 0;
+                foreach my $j (sort keys %{$$out{$i}{"devices"}}) {
+                        $$out{$i}{total_read} += $$out{$i}{"devices"}{$j}{"read"};
+                        $$out{$i}{total_write} += $$out{$i}{"devices"}{$j}{"write"};
+                } # end foreach
+        } # end foreach
+} # end sub
+
+
+sub print_graph_information {
+my ($in,$order,$out);
+$in = shift;
+
+print "graph_title IO Operation Time for /dev/$SAN_DEV\n";
+
+print <<EOM;
+graph_args --base 1000 -l 0
+graph_scale no
+graph_vlabel Time spent on IO Operations (msec)
+graph_category system
+EOM
+
+$out = "";
+foreach my $j (sort keys %{$$in{$SAN_DEV}}) {
+        if ($j =~ m/total_\w+/i) {
+                $order .= "$j ";
+                my $tmp = $j;
+                $tmp =~ s|total_||g;
+                $out .= "$j.label $tmp\n" .
+                        "$j.draw LINE2\n" .
+                        "$j.type DERIVE\n" .
+                        "$j.min 0\n";
+        } # end if
+} # end foreach
+$order =~ s| $||g;
+print "graph_order $order\n";
+print "$out";
+} # end print_graph_information
+
+
+sub test_service {
+    my $return = 1;
+    system ("$powermt version >/dev/null 2>/dev/null");
+    if ($? == 0) {
+         print "yes\n";
+         $return = 0;
+    } else { print "no (powermt binary not found: using $powermt)\n"; }
+    exit $return;
+}
+
+################################################################################
