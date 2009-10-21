@@ -25,7 +25,7 @@
 #
 #    ln -s /usr/share/node/node/plugins/mysql_connections /etc/munin/plugins/mysql_connections
 #
-# Revision 1.0  2007/08/03
+# Revision 1.0  08/03/2007
 # Created by Justin Shepherd <jshepher@rackspace.com>
 #
 # Parameters:
