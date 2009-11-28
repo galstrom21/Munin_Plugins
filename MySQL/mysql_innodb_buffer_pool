@@ -16,11 +16,18 @@
 # along with this program; if not, see http://www.gnu.org/licenses/gpl.txt
 #
 #
+# Status Variables:
+# http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html#statvar_Innodb_buffer_pool_pages_data
+# http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html#statvar_Innodb_buffer_pool_pages_free
+# http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html#statvar_Innodb_buffer_pool_pages_misc
+# http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html#statvar_Innodb_buffer_pool_pages_dirty
+# http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html#statvar_Innodb_buffer_pool_pages_total
+#
 # To enable, link mysql_innodb_buffer_pool to this file. E.g.
 #
 #    ln -s /usr/share/node/node/plugins/mysql_innodb_buffer_pool /etc/munin/plugins/mysql_innodb_buffer_pool
 #
-# Revision 1.0  2007/08/03
+# Revision 1.1  11/27/2009
 # Created by Justin Shepherd <jshepher@rackspace.com>
 #
 # Parameters:

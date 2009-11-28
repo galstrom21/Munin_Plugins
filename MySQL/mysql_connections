@@ -21,11 +21,15 @@
 # 
 # http://dev.mysql.com/doc/administrator/en/mysql-administrator-health-connection-health.html
 #
+# Status Variables:
+# http://dev.mysql.com/doc/refman/5.0/en/server-system-variables.html#sysvar_max_connections
+# http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html#statvar_Threads_connected
+#
 # To enable, link mysql_connections to this file. E.g.
 #
 #    ln -s /usr/share/node/node/plugins/mysql_connections /etc/munin/plugins/mysql_connections
 #
-# Revision 1.0  08/03/2007
+# Revision 1.1  11/27/2009
 # Created by Justin Shepherd <jshepher@rackspace.com>
 #
 # Parameters:
@@ -37,7 +41,7 @@
 #
 #   mysqlopts     - Options to pass to mysql
 #   mysqladmin    - Override location of mysqladmin
-#   warning	  - Override default warning limit
+#   warning	  	  - Override default warning limit
 #   critical	  - Override default critical limit 
 #
 #%# family=auto

@@ -21,11 +21,15 @@
 #
 # http://dev.mysql.com/doc/refman/5.0/en/binary-log.html
 #
+# Status Variables:
+# http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html#statvar_Binlog_cache_use
+# http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html#statvar_Binlog_cache_disk_use
+#
 # To enable, link mysql_binlog_cache to this file. E.g.
 #
 #    ln -s /usr/share/node/node/plugins/mysql_binlog_cache /etc/munin/plugins/mysql_binlog_cache
 #
-# Revision 1.0  2008/06/06
+# Revision 1.1  11/27/2009
 # Created by Justin Shepherd <jshepher@rackspace.com>
 #
 # Parameters:
